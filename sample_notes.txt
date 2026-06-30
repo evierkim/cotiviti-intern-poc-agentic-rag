@@ -1,0 +1,43 @@
+=== CLINICAL NOTE 1 ===
+Patient: 45-year-old female with Type 2 Diabetes (E11.9)
+A1C: 8.2% (elevated)
+BMI: 34.5
+Hypertension present (I10)
+Current medications: Metformin 1000mg BID, Lisinopril 10mg daily
+Recommendation: Increase Metformin to 1500mg BID, consider GLP-1 agonist
+Coding notes: E11.9, I10, Z79.84 (long-term metformin use)
+
+=== CLINICAL NOTE 2 ===
+Patient: 67-year-old male with COPD (J44.9)
+Smoking history: 40 pack-years, current smoker
+Oxygen saturation: 89% on room air
+Tiotropium and albuterol PRN
+Recommendation: Initiate home oxygen therapy, smoking cessation counseling
+Coding notes: J44.9, Z72.0 (tobacco use), Z87.891 (personal history of tobacco dependence)
+
+=== CLINICAL NOTE 3 ===
+Patient: 32-year-old female with postpartum depression (F53.0)
+GAD-7 score: 15 (moderate anxiety)
+PHQ-9 score: 18 (moderate depression)
+Not breastfeeding
+Current medications: Sertraline 50mg daily
+Recommendation: Increase Sertraline to 100mg, consider therapy referral
+Coding notes: F53.0, Z90.01 (acquired absence of breast)
+
+=== CLINICAL NOTE 4 ===
+Patient: 58-year-old male with Chronic Kidney Disease Stage 3 (N18.32)
+eGFR: 45 mL/min
+Type 2 Diabetes (E11.22)
+A1C: 7.1%
+Blood pressure: 138/88
+Current medications: Losartan 50mg, Glipizide 5mg
+Recommendation: Increase Losartan to 100mg, monitor renal function
+Coding notes: N18.32, E11.22, I10
+
+=== CLINICAL NOTE 5 ===
+Patient: 72-year-old female with Atrial Fibrillation (I48.91)
+CHADS2-VASc score: 5
+Current medications: Warfarin, Metoprolol
+INR: 2.1 (therapeutic)
+Recommendation: Continue current regimen, repeat INR in 4 weeks
+Coding notes: I48.91, Z79.01 (long-term anticoagulant therapy)
