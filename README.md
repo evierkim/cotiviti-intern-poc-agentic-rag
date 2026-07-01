@@ -4,8 +4,6 @@
 
 The **RAG-powered coder decision support** for risk adjustment ingests unstructured clinical notes, retrieves the most relevant evidence with semantic search, and uses an LLM to help medical coders reason about ICD-10 capture - with transparent retrieval, confidence scoring, and human-in-the-loop guardrails. Scoped for speed and clarity: proves first principles, not a production platform.
 
-## Why It Matters for Cotiviti
-
 | Essay theme | What Code Does |
 |---|---|
 | Clinical NLP on unstructured notes | Chunks and indexes physician-style chart text |
