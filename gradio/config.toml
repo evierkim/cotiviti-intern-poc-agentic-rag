@@ -1,4 +1,4 @@
-[theme]
+# Gradio UI theme colors (applied in app/gradio_app.py)
 primaryColor = "#A8D5BA"
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f0f2f6"

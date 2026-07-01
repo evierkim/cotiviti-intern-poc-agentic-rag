@@ -1,145 +1,206 @@
-import gradio as gr
 import os
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import gradio as gr
+from dotenv import load_dotenv
 
-from src.document_processor import DocumentProcessor
-from src.vector_store import VectorStore
-from src.rag_agent import RAGAgent
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+
+load_dotenv(ROOT_DIR / ".env")
+
 from src.clinical_notes_loader import ClinicalNotesLoader
+from src.document_processor import DocumentProcessor
+from src.rag_agent import RAGAgent
+from src.vector_store import VectorStore
 
-# Global state variables (will be stored in session state via gr.State)
-class AppState:
-    def __init__(self):
-        self.vector_store = None
-        self.rag_agent = None
-        self.documents_loaded = False
+EXAMPLE_QUERIES = [
+    "What ICD-10 codes apply to the diabetic patient with hypertension and elevated A1C?",
+    "Does the COPD patient documentation support tobacco-use coding for risk adjustment?",
+    "What documentation gaps exist for the CKD patient with Type 2 diabetes?",
+    "Which codes and supporting evidence apply to the atrial fibrillation case?",
+]
+
+ESSAY_CONTEXT = """
+**Essay tie-in:** This prototype implements the *RAG-Powered Coder Decision Support*
+recommendation from my Clinical NLP essay - surfacing relevant clinical evidence and coding
+context at chart review time, with transparent retrieval and human-in-the-loop guardrails
+aligned with Cotiviti's risk adjustment workflows.
+"""
+
+
+def _index_documents(text: str, source_label: str):
+    processor = DocumentProcessor()
+    chunks = processor.chunk_document(text)
+    entities = processor.extract_clinical_entities(text)
+
+    vector_store = VectorStore()
+    vector_store.add_documents(chunks)
+
+    rag_agent = RAGAgent(vector_store, api_key=os.getenv("OPENAI_API_KEY"))
+
+    status = (
+        f"Loaded **{len(chunks)} chunks** from {source_label}. "
+        f"Detected **{len(entities['icd10_codes'])} ICD-10 codes**."
+    )
+    entity_summary = processor.format_entities(entities)
+    return vector_store, rag_agent, status, entity_summary
+
 
 def load_sample_data():
-    """Load the built‑in sample clinical notes."""
-    loader = ClinicalNotesLoader()
-    text = loader.load_sample_notes()
-    
-    processor = DocumentProcessor()
-    chunks = processor.chunk_document(text)
-    
-    vector_store = VectorStore()
-    vector_store.add_documents(chunks)
-    
-    rag_agent = RAGAgent(vector_store, api_key=os.getenv('OPENAI_API_KEY'))
-    
-    return vector_store, rag_agent, f"Loaded {len(chunks)} chunks from sample data."
+    text = ClinicalNotesLoader().load_sample_notes()
+    return _index_documents(text, "built-in sample clinical notes")
+
 
 def load_uploaded_file(file_obj):
-    """Process an uploaded .txt or .pdf file."""
     if file_obj is None:
-        return None, None, "No file uploaded."
-    
-    # Read content
-    content = file_obj.read()
-    try:
-        # Try to decode as text
-        text = content.decode('utf-8', errors='ignore')
-    except:
-        # Fallback for binary (e.g., PDF) – simple placeholder
-        text = str(content)
-    
+        return None, None, "No file uploaded.", ""
+
     processor = DocumentProcessor()
-    chunks = processor.chunk_document(text)
-    
-    vector_store = VectorStore()
-    vector_store.add_documents(chunks)
-    
-    rag_agent = RAGAgent(vector_store, api_key=os.getenv('OPENAI_API_KEY'))
-    
-    return vector_store, rag_agent, f"Loaded {len(chunks)} chunks from uploaded file."
+    filename = Path(file_obj).name if isinstance(file_obj, str) else "uploaded file"
+
+    try:
+        if isinstance(file_obj, str):
+            text = processor.read_document(file_obj, filename=filename)
+        else:
+            raw = file_obj.read()
+            text = processor.read_document(raw, filename=filename)
+    except Exception as exc:
+        return None, None, f"Failed to read file: {exc}", ""
+
+    return _index_documents(text, filename)
+
 
 def query_agent(query, vector_store, rag_agent):
-    """Run the agentic workflow and format output."""
+    empty = ("Please load data first (sample or upload).", "", "", "", "")
     if vector_store is None or rag_agent is None:
-        return "Please load data first (sample or upload).", "", "", ""
-    
-    if not query.strip():
-        return "Please enter a question.", "", "", ""
-    
-    result = rag_agent.agentic_workflow(query)
-    
-    response_text = result['response']
-    confidence = result.get('confidence', 'N/A')
-    retrieval_scores = str(result.get('retrieval_scores', []))
-    actions = "\n".join([f"- {a}" for a in result.get('suggested_actions', [])])
-    
-    return response_text, confidence, retrieval_scores, actions
+        return empty
 
-# Build the Gradio interface
-with gr.Blocks(title="Agentic RAG for Risk Adjustment", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("#Agentic RAG for Risk Adjustment Decision Support")
-    
-    # State variables (persist across interactions)
+    if not query.strip():
+        return ("Please enter a question.", "", "", "", "")
+
+    result = rag_agent.agentic_workflow(query)
+
+    retrieved = result.get("retrieved_chunks", [])
+    retrieved_md = "\n\n---\n\n".join(
+        f"**Chunk {idx}**\n{chunk}" for idx, chunk in enumerate(retrieved, start=1)
+    )
+    if not retrieved_md:
+        retrieved_md = "_No chunks retrieved._"
+
+    similarities = result.get("retrieval_similarities", [])
+    score_line = ", ".join(f"{score:.2f}" for score in similarities) or "N/A"
+
+    actions = "\n".join(f"- {action}" for action in result.get("suggested_actions", []))
+
+    return (
+        result["response"],
+        result.get("confidence", "N/A"),
+        score_line,
+        actions,
+        retrieved_md,
+    )
+
+
+def set_api_key(key: str):
+    if key:
+        os.environ["OPENAI_API_KEY"] = key
+
+
+with gr.Blocks(
+    title="Agentic RAG for Risk Adjustment",
+    theme=gr.themes.Soft(primary_hue="green"),
+) as demo:
+    gr.Markdown(
+        """
+# Agentic RAG for Risk Adjustment Decision Support
+
+A hackathon proof-of-concept for **clinical NLP + retrieval-augmented generation**
+supporting medical coders during chart review.
+"""
+    )
+    gr.Markdown(ESSAY_CONTEXT)
+
     vector_store_state = gr.State(None)
     rag_agent_state = gr.State(None)
-    
+
     with gr.Row():
         with gr.Column(scale=1):
-            gr.Markdown("### Configuration")
+            gr.Markdown("### Setup")
             api_key = gr.Textbox(
                 label="OpenAI API Key",
                 type="password",
                 placeholder="sk-...",
-                info="Enter your key or set OPENAI_API_KEY in .env"
+                value=os.getenv("OPENAI_API_KEY", ""),
+                info="Optional if OPENAI_API_KEY is set in .env",
             )
-            # Update environment if key provided
-            def set_api_key(key):
-                if key:
-                    os.environ['OPENAI_API_KEY'] = key
             api_key.change(set_api_key, inputs=api_key)
-            
-            gr.Markdown("### Document Loading")
-            load_sample_btn = gr.Button("Load Sample Data")
-            upload_file = gr.File(label="Upload Clinical Notes", file_types=[".txt", ".pdf"])
-            load_upload_btn = gr.Button("Process Uploaded File")
-            load_status = gr.Textbox(label="Status", interactive=False)
-        
-        with gr.Column(scale=2):
-            gr.Markdown("### Ask a Clinical Coding Question")
-            query_input = gr.Textbox(
-                label="Your Question",
-                placeholder="e.g., What ICD-10 codes for a diabetic patient with hypertension?",
-                lines=3
+
+            gr.Markdown("### Load Clinical Notes")
+            load_sample_btn = gr.Button("Load Sample Notes", variant="secondary")
+            upload_file = gr.File(
+                label="Upload .txt or .pdf",
+                file_types=[".txt", ".pdf"],
             )
-            submit_btn = gr.Button("Generate Response", variant="primary")
-            
-            gr.Markdown("### Response")
-            response_output = gr.Textbox(label="Response", lines=8, interactive=False)
-            
+            load_upload_btn = gr.Button("Process Upload")
+            load_status = gr.Markdown()
+
+            gr.Markdown("### Extracted Entities")
+            entity_output = gr.Markdown()
+
+        with gr.Column(scale=2):
+            gr.Markdown("### Ask a Coding Question")
+            query_input = gr.Textbox(
+                label="Question",
+                placeholder="e.g., What ICD-10 codes for a diabetic patient with hypertension?",
+                lines=3,
+            )
+            gr.Examples(
+                examples=[[q] for q in EXAMPLE_QUERIES],
+                inputs=query_input,
+                label="Try an example",
+            )
+            submit_btn = gr.Button("Run Agentic Workflow", variant="primary")
+
+            gr.Markdown("### Coder Response")
+            response_output = gr.Textbox(label="Answer", lines=10, interactive=False)
+
             with gr.Row():
-                with gr.Column():
-                    confidence_output = gr.Textbox(label="Confidence", interactive=False)
-                with gr.Column():
-                    retrieval_scores_output = gr.Textbox(label="Retrieval Scores", interactive=False)
-            
-            actions_output = gr.Textbox(label="Suggested Next Actions", lines=3, interactive=False)
-    
-    # Event handlers
+                confidence_output = gr.Textbox(label="Retrieval Confidence", interactive=False)
+                retrieval_scores_output = gr.Textbox(
+                    label="Similarity Scores (higher = better match)",
+                    interactive=False,
+                )
+
+            actions_output = gr.Textbox(
+                label="Suggested Next Actions",
+                lines=4,
+                interactive=False,
+            )
+
+            with gr.Accordion("Retrieved Source Chunks (audit trail)", open=False):
+                retrieved_output = gr.Markdown()
+
     load_sample_btn.click(
         load_sample_data,
-        inputs=[],
-        outputs=[vector_store_state, rag_agent_state, load_status]
+        outputs=[vector_store_state, rag_agent_state, load_status, entity_output],
     )
-    
     load_upload_btn.click(
         load_uploaded_file,
         inputs=[upload_file],
-        outputs=[vector_store_state, rag_agent_state, load_status]
+        outputs=[vector_store_state, rag_agent_state, load_status, entity_output],
     )
-    
     submit_btn.click(
         query_agent,
         inputs=[query_input, vector_store_state, rag_agent_state],
-        outputs=[response_output, confidence_output, retrieval_scores_output, actions_output]
+        outputs=[
+            response_output,
+            confidence_output,
+            retrieval_scores_output,
+            actions_output,
+            retrieved_output,
+        ],
     )
 
 if __name__ == "__main__":
