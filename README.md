@@ -2,11 +2,7 @@
 
 ---
 
-## What This Is
-
-The **RAG-powered coder decision support** for risk adjustment ingests unstructured clinical notes, retrieves the most relevant evidence with semantic search, and uses an LLM to help medical coders reason about ICD-10 capture - with transparent retrieval, confidence scoring, and human-in-the-loop guardrails.
-
-Scoped for speed and clarity: proves first principles, not a production platform.
+The **RAG-powered coder decision support** for risk adjustment ingests unstructured clinical notes, retrieves the most relevant evidence with semantic search, and uses an LLM to help medical coders reason about ICD-10 capture - with transparent retrieval, confidence scoring, and human-in-the-loop guardrails. Scoped for speed and clarity: proves first principles, not a production platform.
 
 ## Why It Matters for Cotiviti
 
@@ -50,42 +46,42 @@ git clone https://github.com/yourusername/cotiviti-intern-poc-agentic-rag.git
 cd cotiviti-intern-poc-agentic-rag
 
 python -m venv venv
-venv\Scripts\activate # --> Windows
-# source venv/bin/activate  --> macOS/Linux
+venv\Scripts\activate # Windows
+# source venv/bin/activate # macOS/Linux
 
 pip install -r requirements.txt
 ```
 
-### 2. Configure API key
+### 2. Set up API key
+
+The app reads `OPENAI_API_KEY` from a local `.env` file on startup. If you already have one, skip to step 3.
 
 ```bash
-copy .env.example .env # --> Windows
-# cp .env.example .env # --> macOS/Linux
+copy .env.example .env # Windows
+# cp .env.example .env # macOS/Linux
 ```
 
-Add your OpenAI key to `.env`:
+Replace the placeholder in `.env` with your key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 
-```
-OPENAI_API_KEY=sk-...
-```
+You can also paste your key into the **OpenAI API Key** field in the Gradio sidebar at runtime.
 
-### 3. Launch the interactive demo
+### 3. Launch Demo
 
 ```bash
 python app/gradio_app.py
 ```
 
-Open the local URL Gradio prints (typically `http://127.0.0.1:7860`).
+Open local URL Gradio prints (`http://127.0.0.1:7860`).
 
 ### 4. Optional: run headless demo
 
-Useful for verifying the pipeline without the UI:
+Verifying pipeline without the UI:
 
 ```bash
 python scripts/run_demo.py
 ```
 
-## Demo Walkthrough (~2 minutes)
+## Demo Walkthrough
 
 1. **Load Sample Notes** - indexes five synthetic clinical charts from `sample_notes.txt`
 2. **Review Extracted Entities** - ICD-10 codes, medications, and labs detected via regex (NLP baseline layer)
@@ -99,32 +95,26 @@ python scripts/run_demo.py
 
 ```
 app/
-  gradio_app.py          # Interactive UI
+  gradio_app.py # Interactive UI
 scripts/
-  run_demo.py            # Headless CLI demo
+  run_demo.py # Headless CLI demo
 src/
   clinical_notes_loader.py
-  document_processor.py  # Chunking, PDF parsing, entity extraction
-  vector_store.py        # Sentence-BERT + FAISS
-  rag_agent.py           # Agentic RAG workflow
-sample_notes.txt         # Synthetic clinical charts for demo
+  document_processor.py # Chunking, PDF parsing, entity extraction
+  vector_store.py # Sentence-BERT + FAISS
+  rag_agent.py # Agentic RAG workflow
+sample_notes.txt # Synthetic clinical charts for demo
 requirements.txt
-.env.example
+.env.example # Template for local .env
 ```
 
 ## Design Notes
 
-- **No fine-tuning**. Prompt-engineered general-purpose LLM, matching the essay's "shift to general-purpose models" trend
-- **Regex entity extraction** . Lightweight baseline NLP, surfaced for transparency (not hidden inside the LLM)
-- **In-memory FAISS index**. No database overhead; rebuilds on each load for demo simplicity
-- **Human-in-the-loop**. Every response includes suggested review actions; LLM supports coders, does not replace them
-- **Synthetic data only**. No PHI; safe for sharing and evaluation
-
-## Troubleshooting
-
-- **Python version:** Use Python 3.12 (recommended). Python 3.13 removed the `audioop` module, which can break Gradio 4.x on some setups.
-- **First run is slow:** Sentence-BERT downloads model weights (~90 MB) on first launch.
-- **API errors:** Confirm `OPENAI_API_KEY` is set in `.env` or entered in the UI sidebar.
+- **No fine-tuning**. Prompt-engineered general-purpose LLM to match the "shift to general-purpose models" trend in report
+- **Regex entity extraction**. Lightweight baseline NLP, surfaced for transparency (not hidden inside the LLM)
+- **In-memory FAISS index**. No database overhead, rebuilds on each load for demo simplicity
+- **Human-in-the-loop**. Every response includes suggested review actions. LLM supports coders, does not replace them
+- **Synthetic data only**. No PHI, safe for sharing and evaluation
 
 ## Limitations
 
