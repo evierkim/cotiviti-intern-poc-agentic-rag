@@ -6,7 +6,7 @@ The **RAG-powered coder decision support** for risk adjustment ingests unstructu
 
 ## Why It Matters for Cotiviti
 
-| Essay theme | How this PoC demonstrates it |
+| Essay theme | What Code Does |
 |---|---|
 | Clinical NLP on unstructured notes | Chunks and indexes physician-style chart text |
 | LLM-enhanced coding workflows | GPT-3.5 generates grounded coding recommendations |
