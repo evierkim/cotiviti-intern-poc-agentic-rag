@@ -38,7 +38,7 @@ def _index_documents(text: str, source_label: str):
     vector_store = VectorStore()
     vector_store.add_documents(chunks)
 
-    rag_agent = RAGAgent(vector_store, api_key=os.getenv("OPENAI_API_KEY"))
+    rag_agent = RAGAgent(vector_store)
 
     status = (
         f"Loaded **{len(chunks)} chunks** from {source_label}. "
@@ -103,9 +103,9 @@ def query_agent(query, vector_store, rag_agent):
     )
 
 
-def set_api_key(key: str):
-    if key:
-        os.environ["OPENAI_API_KEY"] = key
+def set_ollama_model(model: str):
+    if model.strip():
+        os.environ["OLLAMA_MODEL"] = model.strip()
 
 
 with gr.Blocks(
@@ -127,15 +127,17 @@ supporting medical coders during chart review.
 
     with gr.Row():
         with gr.Column(scale=1):
-            gr.Markdown("### Setup")
-            api_key = gr.Textbox(
-                label="OpenAI API Key",
-                type="password",
-                placeholder="sk-...",
-                value=os.getenv("OPENAI_API_KEY", ""),
-                info="Optional if OPENAI_API_KEY is set in .env",
+            gr.Markdown("### Setup (Ollama - free, local)")
+            gr.Markdown(
+                "Install [Ollama](https://ollama.com), then run `ollama pull llama3.2` once."
             )
-            api_key.change(set_api_key, inputs=api_key)
+            ollama_model = gr.Textbox(
+                label="Ollama Model",
+                placeholder="llama3.2",
+                value=os.getenv("OLLAMA_MODEL", "llama3.2"),
+                info="Default: llama3.2. For better quality: llama3.1:8b",
+            )
+            ollama_model.change(set_ollama_model, inputs=ollama_model)
 
             gr.Markdown("### Load Clinical Notes")
             load_sample_btn = gr.Button("Load Sample Notes", variant="secondary")

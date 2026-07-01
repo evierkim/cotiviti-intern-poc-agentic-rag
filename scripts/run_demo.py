@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Headless demo of the agentic RAG pipeline (no UI required)."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -11,9 +10,11 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 load_dotenv(ROOT_DIR / ".env")
 
+from openai import OpenAI
+
 from src.clinical_notes_loader import ClinicalNotesLoader
 from src.document_processor import DocumentProcessor
-from src.rag_agent import RAGAgent
+from src.rag_agent import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, RAGAgent
 from src.vector_store import VectorStore
 
 DEMO_QUESTIONS = [
@@ -22,14 +23,35 @@ DEMO_QUESTIONS = [
 ]
 
 
-def main() -> None:
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Set OPENAI_API_KEY in .env before running the demo.")
-        sys.exit(1)
+def check_ollama() -> bool:
+    import os
 
+    base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
+    model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    try:
+        client = OpenAI(base_url=base_url, api_key="ollama", timeout=10.0)
+        client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Say OK"}],
+            max_tokens=5,
+        )
+        return True
+    except Exception as exc:
+        print(f"Cannot reach Ollama ({base_url}, model={model}): {exc}")
+        print("\nSetup:")
+        print("  1. Install Ollama from https://ollama.com")
+        print(f"  2. Run: ollama pull {model}")
+        print("  3. Ensure Ollama is running, then retry.")
+        return False
+
+
+def main() -> None:
     print("=" * 72)
     print("Agentic RAG - Headless Demo")
     print("=" * 72)
+
+    if not check_ollama():
+        sys.exit(1)
 
     text = ClinicalNotesLoader().load_sample_notes()
     processor = DocumentProcessor()

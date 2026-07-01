@@ -5,11 +5,25 @@ from openai import OpenAI
 
 from src.vector_store import VectorStore
 
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_OLLAMA_MODEL = "llama3.2"
+
 
 class RAGAgent:
-    def __init__(self, vector_store: VectorStore, api_key: str | None = None):
+    def __init__(
+        self,
+        vector_store: VectorStore,
+        base_url: str | None = None,
+        model: str | None = None,
+    ):
         self.vector_store = vector_store
-        self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
+        self.model = model or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+        self.client = OpenAI(
+            base_url=self.base_url,
+            api_key="ollama",
+            timeout=120.0,
+        )
 
     def retrieve(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
         return self.vector_store.search(query, k)
@@ -29,6 +43,16 @@ class RAGAgent:
 
     def _similarity_from_distance(self, distance: float) -> float:
         return 1.0 / (1.0 + distance)
+
+    def _llm_setup_hint(self) -> str:
+        return (
+            f"Using Ollama at {self.base_url} with model '{self.model}'.\n\n"
+            "Setup:\n"
+            "  1. Install Ollama from https://ollama.com\n"
+            "  2. Run: ollama pull llama3.2\n"
+            "  3. Ensure Ollama is running (it starts automatically after install)\n\n"
+            "For better answers on a machine with 8GB+ RAM, try: ollama pull llama3.1:8b"
+        )
 
     def generate_response(self, query: str, context: str) -> Dict[str, Any]:
         system_prompt = """You are a clinical decision support assistant for medical coders
@@ -54,9 +78,11 @@ Respond with:
 3. Documentation gaps or coding risks
 4. Whether clinician review is recommended"""
 
+        model = os.getenv("OLLAMA_MODEL", self.model)
+
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -73,7 +99,7 @@ Respond with:
             return {
                 "response": (
                     f"Error generating response: {exc}\n\n"
-                    "Verify your OpenAI API key in .env or the sidebar field."
+                    f"{self._llm_setup_hint()}"
                 ),
                 "context_used": context,
                 "query": query,

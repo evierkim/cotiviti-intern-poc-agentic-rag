@@ -7,7 +7,7 @@ The **RAG-powered coder decision support** for risk adjustment ingests unstructu
 | Essay theme | What Code Does |
 |---|---|
 | Clinical NLP on unstructured notes | Chunks and indexes physician-style chart text |
-| LLM-enhanced coding workflows | GPT-3.5 generates grounded coding recommendations |
+| LLM-enhanced coding workflows | Local Llama 3.2 (Ollama) generates grounded coding recommendations |
 | Agentic AI direction | Retrieve -> generate -> self-evaluate -> suggest next actions |
 | Transparency / black-box concerns | Shows retrieved source chunks and similarity scores |
 | Risk adjustment & medical record coding | Sample scenarios mirror HCC-relevant comorbidities |
@@ -25,7 +25,7 @@ Clinical Notes (.txt / .pdf)
         |
         v
  RAGAgent -> retrieve top-k chunks
-        |      generate answer (OpenAI)
+        |      generate answer (Ollama / Llama 3.2)
         |      score confidence from retrieval
         +----> suggest coder next actions
         |
@@ -33,7 +33,7 @@ Clinical Notes (.txt / .pdf)
  Gradio UI (interactive demo)
 ```
 
-**Stack:** Python 3.10-3.12 | Gradio | OpenAI GPT-3.5-Turbo | Sentence-BERT (`all-MiniLM-L6-v2`) | FAISS
+**Stack:** Python 3.10-3.12 | Gradio | Ollama (Llama 3.2) | Sentence-BERT (`all-MiniLM-L6-v2`) | FAISS
 
 ## Quick Start
 
@@ -50,18 +50,22 @@ venv\Scripts\activate # Windows
 pip install -r requirements.txt
 ```
 
-### 2. Set up API key
+### 2. Set up Ollama (free, local LLM)
 
-The app reads `OPENAI_API_KEY` from a local `.env` file on startup. If you already have one, skip to step 3.
+Install [Ollama](https://ollama.com), then pull the default model once:
+
+```bash
+ollama pull llama3.2
+```
+
+Optional: copy `.env.example` to `.env` if you want to override the model or Ollama URL.
 
 ```bash
 copy .env.example .env # Windows
 # cp .env.example .env # macOS/Linux
 ```
 
-Replace the placeholder in `.env` with your key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
-
-You can also paste your key into the **OpenAI API Key** field in the Gradio sidebar at runtime.
+For better answer quality on machines with 8GB+ RAM: `ollama pull llama3.1:8b` and set `OLLAMA_MODEL=llama3.1:8b` in `.env` or the Gradio sidebar.
 
 ### 3. Launch Demo
 
@@ -119,4 +123,4 @@ requirements.txt
 - Sample notes are synthetic, not production chart data
 - Entity extraction is regex-based, not a clinical NER model
 - PDF support depends on text-layer extraction (scanned images would need OCR - a natural next step toward multimodal)
-- Requires an OpenAI API key for generation (retrieval works offline after model download)
+- Requires Ollama running locally for generation (retrieval works offline after model download)
