@@ -7,7 +7,7 @@ The **RAG-powered coder decision support** for risk adjustment ingests unstructu
 | Essay theme | What Code Does |
 |---|---|
 | Clinical NLP on unstructured notes | Chunks and indexes physician-style chart text |
-| LLM-enhanced coding workflows | Local Llama 3.2 (Ollama) generates grounded coding recommendations |
+| LLM-enhanced coding workflows | Local Llama 3.2 1B (Ollama) generates grounded coding recommendations |
 | Agentic AI direction | Retrieve -> generate -> self-evaluate -> suggest next actions |
 | Transparency / black-box concerns | Shows retrieved source chunks and similarity scores |
 | Risk adjustment & medical record coding | Sample scenarios mirror HCC-relevant comorbidities |
@@ -25,7 +25,7 @@ Clinical Notes (.txt / .pdf)
         |
         v
  RAGAgent -> retrieve top-k chunks
-        |      generate answer (Ollama / Llama 3.2)
+        |      generate answer (Ollama / Llama 3.2 1B)
         |      score confidence from retrieval
         +----> suggest coder next actions
         |
@@ -33,7 +33,7 @@ Clinical Notes (.txt / .pdf)
  Gradio UI (interactive demo)
 ```
 
-**Stack:** Python 3.10-3.12 | Gradio | Ollama (Llama 3.2) | Sentence-BERT (`all-MiniLM-L6-v2`) | FAISS
+**Stack:** Python 3.10-3.12 | Gradio | Ollama (Llama 3.2 1B) | Sentence-BERT (`all-MiniLM-L6-v2`) | FAISS
 
 ## Quick Start
 
@@ -52,10 +52,10 @@ pip install -r requirements.txt
 
 ### 2. Set up Ollama (free, local LLM)
 
-Install [Ollama](https://ollama.com), then pull the default model once:
+Install [Ollama](https://ollama.com), then pull the default model once (optimized for CPU demos):
 
 ```bash
-ollama pull llama3.2
+ollama pull llama3.2:1b
 ```
 
 Optional: copy `.env.example` to `.env` if you want to override the model or Ollama URL.
@@ -65,7 +65,7 @@ copy .env.example .env # Windows
 # cp .env.example .env # macOS/Linux
 ```
 
-For better answer quality on machines with 8GB+ RAM: `ollama pull llama3.1:8b` and set `OLLAMA_MODEL=llama3.1:8b` in `.env` or the Gradio sidebar.
+For better answer quality on machines with a GPU: `ollama pull llama3.2` and set `OLLAMA_MODEL=llama3.2` in `.env` or the Gradio sidebar.
 
 ### 3. Launch Demo
 
@@ -114,7 +114,7 @@ requirements.txt
 
 - **No fine-tuning**. Prompt-engineered general-purpose LLM to match the "shift to general-purpose models" trend in report
 - **Regex entity extraction**. Lightweight baseline NLP, surfaced for transparency (not hidden inside the LLM)
-- **In-memory FAISS index**. No database overhead, rebuilds on each load for demo simplicity
+- **CPU-optimized defaults**. Uses `llama3.2:1b`, shorter prompts, streaming responses, and cached embeddings for faster demos
 - **Human-in-the-loop**. Every response includes suggested review actions. LLM supports coders, does not replace them
 - **Synthetic data only**. No PHI, safe for sharing and evaluation
 

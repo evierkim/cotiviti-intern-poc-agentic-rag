@@ -1,22 +1,39 @@
-import json
-import numpy as np
-from typing import List, Dict, Any
-from sentence_transformers import SentenceTransformer
-import faiss
 import pickle
 import os
+from typing import Any, Dict, List
+
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
+
+_EMBEDDING_MODEL: SentenceTransformer | None = None
+DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+
+def get_embedding_model(model_name: str = DEFAULT_EMBEDDING_MODEL) -> SentenceTransformer:
+    """Reuse one SentenceTransformer instance across VectorStore rebuilds."""
+    global _EMBEDDING_MODEL
+    if _EMBEDDING_MODEL is None:
+        _EMBEDDING_MODEL = SentenceTransformer(model_name)
+    return _EMBEDDING_MODEL
+
 
 class VectorStore:
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name)
+    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL):
+        self.model = get_embedding_model(model_name)
         self.index = None
         self.documents = []
         self.embedding_dim = 384  # all-MiniLM-L6-v2 dimension
-        
+
+    def clear(self):
+        """Drop indexed chunks without reloading the embedding model."""
+        self.index = None
+        self.documents = []
+
     def add_documents(self, chunks: List[Dict[str, Any]]):
         """Add document chunks to vector store."""
-        texts = [chunk['text'] for chunk in chunks]
-        embeddings = self.model.encode(texts)
+        texts = [chunk["text"] for chunk in chunks]
+        embeddings = self.model.encode(texts, show_progress_bar=False)
         
         # Initialize FAISS index if needed
         if self.index is None:
@@ -26,12 +43,12 @@ class VectorStore:
         self.index.add(np.array(embeddings).astype(np.float32))
         self.documents.extend(chunks)
     
-    def search(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
+    def search(self, query: str, k: int = 2) -> List[Dict[str, Any]]:
         """Search for similar documents."""
         if self.index is None or self.index.ntotal == 0:
             return []
-        
-        query_embedding = self.model.encode([query])
+
+        query_embedding = self.model.encode([query], show_progress_bar=False)
         distances, indices = self.index.search(
             np.array(query_embedding).astype(np.float32),
             min(k, len(self.documents))

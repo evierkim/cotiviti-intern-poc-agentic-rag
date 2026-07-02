@@ -1,12 +1,18 @@
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, Generator, List
 
 from openai import OpenAI
 
 from src.vector_store import VectorStore
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
-DEFAULT_OLLAMA_MODEL = "llama3.2"
+DEFAULT_OLLAMA_MODEL = "llama3.2:1b"
+DEFAULT_RETRIEVAL_K = 2
+DEFAULT_MAX_TOKENS = 300
+
+SYSTEM_PROMPT = """You are a clinical coding assistant for risk adjustment.
+Use only the provided context. Suggest ICD-10 codes supported by the evidence,
+note documentation gaps, and flag when clinician review is needed. Be concise."""
 
 
 class RAGAgent:
@@ -22,10 +28,10 @@ class RAGAgent:
         self.client = OpenAI(
             base_url=self.base_url,
             api_key="ollama",
-            timeout=120.0,
+            timeout=90.0,
         )
 
-    def retrieve(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, k: int = DEFAULT_RETRIEVAL_K) -> List[Dict[str, Any]]:
         return self.vector_store.search(query, k)
 
     def _format_context(self, results: List[Dict[str, Any]]) -> str:
@@ -34,61 +40,56 @@ class RAGAgent:
 
         parts = []
         for i, result in enumerate(results, start=1):
-            similarity = self._similarity_from_distance(result["score"])
-            parts.append(
-                f"[Chunk {i} | similarity={similarity:.2f}]\n"
-                f"{result['document']['text']}\n"
-            )
-        return "\n".join(parts)
+            parts.append(f"[{i}] {result['document']['text']}")
+        return "\n\n".join(parts)
 
     def _similarity_from_distance(self, distance: float) -> float:
         return 1.0 / (1.0 + distance)
 
+    def _active_model(self) -> str:
+        return os.getenv("OLLAMA_MODEL", self.model)
+
     def _llm_setup_hint(self) -> str:
         return (
-            f"Using Ollama at {self.base_url} with model '{self.model}'.\n\n"
+            f"Using Ollama at {self.base_url} with model '{self._active_model()}'.\n\n"
             "Setup:\n"
             "  1. Install Ollama from https://ollama.com\n"
-            "  2. Run: ollama pull llama3.2\n"
+            "  2. Run: ollama pull llama3.2:1b\n"
             "  3. Ensure Ollama is running (it starts automatically after install)\n\n"
-            "For better answers on a machine with 8GB+ RAM, try: ollama pull llama3.1:8b"
+            "For better quality on GPU machines, try: ollama pull llama3.2"
         )
 
+    def _chat_messages(self, query: str, context: str) -> List[Dict[str, str]]:
+        user_prompt = (
+            f"Context:\n{context}\n\n"
+            f"Question: {query}\n\n"
+            "Briefly list: (1) key findings, (2) ICD-10 codes, "
+            "(3) gaps/risks, (4) clinician review needed?"
+        )
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def warm_up(self) -> None:
+        """Load the Ollama model into memory before the first user query."""
+        try:
+            self.client.chat.completions.create(
+                model=self._active_model(),
+                messages=[{"role": "user", "content": "ok"}],
+                max_tokens=1,
+                temperature=0,
+            )
+        except Exception:
+            pass
+
     def generate_response(self, query: str, context: str) -> Dict[str, Any]:
-        system_prompt = """You are a clinical decision support assistant for medical coders
-at a healthcare analytics company focused on risk adjustment.
-
-Your role is to:
-1. Use only the provided clinical context
-2. Help coders identify appropriate ICD-10 codes and documentation requirements
-3. Explain your reasoning clearly for auditability
-4. Flag uncertainty and recommend clinician review when evidence is incomplete
-
-Always cite specific findings from the context.
-Be conservative - do not invent diagnoses, codes, or medications not supported by the context."""
-
-        user_prompt = f"""Context from retrieved clinical documents:
-{context}
-
-Question: {query}
-
-Respond with:
-1. Relevant clinical findings from the context
-2. Suggested ICD-10 codes (if supported by the context)
-3. Documentation gaps or coding risks
-4. Whether clinician review is recommended"""
-
-        model = os.getenv("OLLAMA_MODEL", self.model)
-
         try:
             response = self.client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+                model=self._active_model(),
+                messages=self._chat_messages(query, context),
                 temperature=0.2,
-                max_tokens=600,
+                max_tokens=DEFAULT_MAX_TOKENS,
             )
             return {
                 "response": response.choices[0].message.content,
@@ -104,6 +105,28 @@ Respond with:
                 "context_used": context,
                 "query": query,
             }
+
+    def generate_response_stream(
+        self, query: str, context: str
+    ) -> Generator[str, None, None]:
+        try:
+            stream = self.client.chat.completions.create(
+                model=self._active_model(),
+                messages=self._chat_messages(query, context),
+                temperature=0.2,
+                max_tokens=DEFAULT_MAX_TOKENS,
+                stream=True,
+            )
+            full = ""
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content or ""
+                full += delta
+                yield full
+        except Exception as exc:
+            yield (
+                f"Error generating response: {exc}\n\n"
+                f"{self._llm_setup_hint()}"
+            )
 
     def _confidence_label(self, results: List[Dict[str, Any]]) -> str:
         if not results:
@@ -171,25 +194,59 @@ Respond with:
         )
         return actions
 
+    def _workflow_metadata(
+        self, query: str, results: List[Dict[str, Any]], response_text: str
+    ) -> Dict[str, Any]:
+        return {
+            "confidence": self._confidence_label(results),
+            "retrieval_scores": [round(result["score"], 4) for result in results],
+            "retrieval_similarities": [
+                round(self._similarity_from_distance(result["score"]), 4)
+                for result in results
+            ],
+            "retrieved_chunks": [result["document"]["text"] for result in results],
+            "suggested_actions": self._suggest_actions(query, results, response_text),
+        }
+
     def agentic_workflow(self, query: str) -> Dict[str, Any]:
         """Retrieve -> generate -> self-evaluate -> suggest next actions."""
-        results = self.retrieve(query, k=3)
+        results = self.retrieve(query)
         context = self._format_context(results)
         response_data = self.generate_response(query, context)
-
-        response_data["confidence"] = self._confidence_label(results)
-        response_data["retrieval_scores"] = [
-            round(result["score"], 4) for result in results
-        ]
-        response_data["retrieval_similarities"] = [
-            round(self._similarity_from_distance(result["score"]), 4)
-            for result in results
-        ]
-        response_data["retrieved_chunks"] = [
-            result["document"]["text"] for result in results
-        ]
-        response_data["suggested_actions"] = self._suggest_actions(
-            query, results, response_data["response"]
+        response_data.update(
+            self._workflow_metadata(query, results, response_data["response"])
         )
-
         return response_data
+
+    def agentic_workflow_stream(
+        self, query: str
+    ) -> Generator[Dict[str, Any], None, None]:
+        """Streaming variant for Gradio: yields partial then final workflow state."""
+        results = self.retrieve(query)
+        context = self._format_context(results)
+        metadata = self._workflow_metadata(query, results, "")
+
+        yield {
+            "response": "_Generating answer..._",
+            "context_used": context,
+            "query": query,
+            **metadata,
+        }
+
+        full_response = ""
+        for partial in self.generate_response_stream(query, context):
+            full_response = partial
+            yield {
+                "response": full_response,
+                "context_used": context,
+                "query": query,
+                **metadata,
+            }
+
+        metadata = self._workflow_metadata(query, results, full_response)
+        yield {
+            "response": full_response,
+            "context_used": context,
+            "query": query,
+            **metadata,
+        }
